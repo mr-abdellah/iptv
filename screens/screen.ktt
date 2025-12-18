@@ -1,0 +1,335 @@
+package com.example.iptv.ui.player
+
+import android.view.TextureView
+import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+@Composable
+fun PlayerScreen(
+        streamUrl: String,
+        channelName: String,
+        currentChannel: com.example.iptv.data.model.Channel,
+        channelList: List<com.example.iptv.data.model.Channel>,
+        currentChannelIndex: Int,
+        favoritesRepository: com.example.iptv.data.repository.FavoritesRepository,
+        onChannelChange: (com.example.iptv.data.model.Channel) -> Unit,
+        onBack: () -> Unit,
+        viewModel: PlayerViewModel = viewModel()
+) {
+        val context = LocalContext.current
+        val uiState by viewModel.uiState.collectAsState()
+        val favorites by favoritesRepository.favorites.collectAsState()
+        val isFavorite = favorites.contains(currentChannel.streamId)
+
+        // Focus Requesters
+        val playButtonFocusRequester = remember { FocusRequester() }
+        val screenFocusRequester = remember { FocusRequester() }
+
+        // Controls visibility state
+        var showControls by remember { mutableStateOf(true) }
+
+        // Interaction source for the clickable background (removes ripple effect if desired)
+        val interactionSource = remember { MutableInteractionSource() }
+
+        // --- AUTO-FOCUS & AUTO-HIDE LOGIC ---
+        LaunchedEffect(showControls) {
+                if (showControls) {
+                        // TV Mode: Focus the Play button so remote works instantly
+                        playButtonFocusRequester.requestFocus()
+                        // Auto-hide after 5 seconds
+                        kotlinx.coroutines.delay(5000)
+                        showControls = false
+                } else {
+                        // When controls hide, focus the screen to capture Up/Down keys
+                        screenFocusRequester.requestFocus()
+                }
+        }
+
+        // --- INITIALIZE PLAYER ---
+        LaunchedEffect(streamUrl) { viewModel.initializePlayer(context, streamUrl, channelName) }
+
+        // --- CLEANUP ---
+        DisposableEffect(Unit) { onDispose { viewModel.releasePlayer() } }
+
+        // --- BACK BUTTON HANDLER ---
+        BackHandler { onBack() }
+
+        // Channel Navigation Helpers
+        val onPreviousChannel = {
+                if (currentChannelIndex > 0) onChannelChange(channelList[currentChannelIndex - 1])
+        }
+        val onNextChannel = {
+                if (currentChannelIndex < channelList.size - 1)
+                        onChannelChange(channelList[currentChannelIndex + 1])
+        }
+
+        // --- ROOT CONTAINER ---
+        Box(
+                modifier =
+                        Modifier.fillMaxSize()
+                                .background(Color.Black)
+                                // 1. Handle Remote Keys (Hardware)
+                                .focusRequester(screenFocusRequester)
+                                .focusable()
+                                .onKeyEvent { keyEvent ->
+                                        if (keyEvent.type == KeyEventType.KeyDown) {
+                                                when (keyEvent.key) {
+                                                        Key.DirectionUp -> {
+                                                                onNextChannel()
+                                                                true
+                                                        }
+                                                        Key.DirectionDown -> {
+                                                                onPreviousChannel()
+                                                                true
+                                                        }
+                                                        Key.Enter, Key.DirectionCenter -> {
+                                                                showControls = !showControls
+                                                                true
+                                                        }
+                                                        else -> false
+                                                }
+                                        } else false
+                                }
+        ) {
+                // --- LAYER 1: VIDEO TEXTURE VIEW ---
+                // AndroidView handling the TextureView for video rendering
+                AndroidView(
+                        factory = { ctx ->
+                                TextureView(ctx).apply {
+                                        layoutParams =
+                                                ViewGroup.LayoutParams(
+                                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                                )
+                                        // Important for TextureView to work in complex layouts
+                                        isOpaque = false
+                                }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { textureView ->
+                                // Attach player to this specific TextureView
+                                viewModel.getPlayer()?.setVideoTextureView(textureView)
+                        }
+                )
+
+                // --- LAYER 2: TRANSPARENT CLICK LISTENER ---
+                // This box covers the screen to detect taps for toggling controls
+                Box(
+                        modifier =
+                                Modifier.fillMaxSize().clickable(
+                                                interactionSource = interactionSource,
+                                                indication = null // No ripple effect
+                                        ) { showControls = !showControls }
+                )
+
+                // --- LAYER 3: ERROR MESSAGE ---
+                uiState.errorMessage?.let { errorMessage ->
+                        Card(modifier = Modifier.align(Alignment.Center).padding(32.dp)) {
+                                Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                        Text(
+                                                text = "Playback Error",
+                                                color = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(text = errorMessage)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Button(
+                                                onClick = {
+                                                        viewModel.initializePlayer(
+                                                                context,
+                                                                streamUrl,
+                                                                channelName
+                                                        )
+                                                }
+                                        ) { Text("Retry") }
+                                }
+                        }
+                }
+
+                // --- LAYER 4: CONTROLS OVERLAY ---
+                if (showControls) {
+                        VideoPlayerControls(
+                                channelName = currentChannel.name,
+                                isFavorite = isFavorite,
+                                currentChannelIndex = currentChannelIndex,
+                                totalChannels = channelList.size,
+                                isPlaying = uiState.isPlaying,
+                                focusRequester =
+                                        playButtonFocusRequester, // Pass focus for TV Remote
+                                onFavoriteClick = {
+                                        favoritesRepository.toggleFavorite(currentChannel.streamId)
+                                },
+                                onPreviousChannel = onPreviousChannel,
+                                onNextChannel = onNextChannel,
+                                onPlayPause = {
+                                        if (uiState.isPlaying) viewModel.pausePlayer()
+                                        else viewModel.resumePlayer()
+                                },
+                                onBack = onBack,
+                                // Passing empty lambda for toggle because the background Box
+                                // handles it now
+                                onToggleControls = {}
+                        )
+                }
+        }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun VideoPlayerControls(
+        channelName: String,
+        isFavorite: Boolean,
+        currentChannelIndex: Int,
+        totalChannels: Int,
+        isPlaying: Boolean,
+        focusRequester: FocusRequester,
+        onFavoriteClick: () -> Unit,
+        onPreviousChannel: () -> Unit,
+        onNextChannel: () -> Unit,
+        onPlayPause: () -> Unit,
+        onBack: () -> Unit,
+        onToggleControls: () -> Unit
+) {
+        // We use a Box here to position elements, but we let clicks pass through
+        // to the background layer (Layer 2) for areas that aren't buttons.
+        Box(
+                modifier =
+                        Modifier.fillMaxSize()
+                                .background(
+                                        Color.Black.copy(alpha = 0.4f)
+                                ) // Slight dimming when controls are shown
+        ) {
+                // Top Bar
+                Card(
+                        modifier =
+                                Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(16.dp),
+                        colors =
+                                CardDefaults.cardColors(
+                                        containerColor = Color.Black.copy(alpha = 0.7f)
+                                ),
+                        shape = RoundedCornerShape(12.dp)
+                ) {
+                        Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                                IconButton(onClick = onBack) {
+                                        Icon(
+                                                Icons.AutoMirrored.Filled.ArrowBack,
+                                                "Back",
+                                                tint = Color.White
+                                        )
+                                }
+                                Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                        Text(
+                                                text = channelName,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                                text =
+                                                        "${currentChannelIndex + 1} of $totalChannels",
+                                                color = Color.White.copy(alpha = 0.8f)
+                                        )
+                                }
+                                IconButton(onClick = onFavoriteClick) {
+                                        Icon(
+                                                if (isFavorite) Icons.Default.Favorite
+                                                else Icons.Default.FavoriteBorder,
+                                                null,
+                                                tint = if (isFavorite) Color.Red else Color.White
+                                        )
+                                }
+                        }
+                }
+
+                // Bottom Controls
+                Card(
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                        colors =
+                                CardDefaults.cardColors(
+                                        containerColor = Color.Black.copy(alpha = 0.7f)
+                                ),
+                        shape = RoundedCornerShape(24.dp)
+                ) {
+                        Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                        ) {
+                                IconButton(onClick = onPreviousChannel) {
+                                        Icon(
+                                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                                null,
+                                                modifier = Modifier.size(32.dp),
+                                                tint = Color.White
+                                        )
+                                }
+
+                                // Play Button with AUTO-FOCUS
+                                IconButton(
+                                        onClick = onPlayPause,
+                                        modifier =
+                                                Modifier.size(56.dp)
+                                                        .focusRequester(
+                                                                focusRequester
+                                                        ) // Grabs remote focus
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                                MaterialTheme.colorScheme.primary
+                                                                        .copy(alpha = 0.3f)
+                                                        )
+                                                        .focusable()
+                                ) {
+                                        Text(
+                                                text = if (isPlaying) "⏸" else "▶",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.headlineSmall
+                                        )
+                                }
+
+                                IconButton(onClick = onNextChannel) {
+                                        Icon(
+                                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                                null,
+                                                modifier = Modifier.size(32.dp),
+                                                tint = Color.White
+                                        )
+                                }
+                        }
+                }
+        }
+}

@@ -1,0 +1,359 @@
+package com.example.iptv.ui.login
+
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.iptv.data.repository.XtreamRepository
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LoginScreen(
+        onLoginSuccess: (XtreamRepository) -> Unit,
+        viewModel: LoginViewModel = viewModel()
+) {
+        val uiState by viewModel.uiState.collectAsState()
+        val keyboardController = LocalSoftwareKeyboardController.current
+
+        val hostFocusRequester = remember { FocusRequester() }
+        val portFocusRequester = remember { FocusRequester() }
+        val usernameFocusRequester = remember { FocusRequester() }
+        val passwordFocusRequester = remember { FocusRequester() }
+        val loginButtonFocusRequester = remember { FocusRequester() }
+
+        LaunchedEffect(uiState.isAuthenticated) {
+                if (uiState.isAuthenticated) {
+                        onLoginSuccess(viewModel.getRepository())
+                }
+        }
+
+        LaunchedEffect(Unit) {
+                // Auto-login with pre-filled credentials only once
+                if (!uiState.hasTriedAutoLogin && !uiState.isLoading && !uiState.isAuthenticated) {
+                        viewModel.login()
+                }
+                // Focus the login button for TV navigation
+                loginButtonFocusRequester.requestFocus()
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+                // Background gradient
+                Box(
+                        modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                        Brush.verticalGradient(
+                                                colors = listOf(
+                                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.05f),
+                                                        MaterialTheme.colorScheme.surface
+                                                )
+                                        )
+                                )
+                )
+                
+                // Main content
+                Box(
+                        modifier = Modifier.fillMaxSize().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                ) {
+                        Card(
+                                modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp)
+                                        .alpha(if (uiState.isLoading || !uiState.hasTriedAutoLogin) 0.3f else 1f)
+                                        .blur(if (uiState.isLoading || !uiState.hasTriedAutoLogin) 2.dp else 0.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+                                shape = RoundedCornerShape(16.dp)
+                        ) {
+                                Column(
+                                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                                ) {
+                                        // App icon with animation
+                                        val infiniteTransition = rememberInfiniteTransition(label = "icon_pulse")
+                                        val pulseScale by infiniteTransition.animateFloat(
+                                                initialValue = 1f,
+                                                targetValue = 1.1f,
+                                                animationSpec = infiniteRepeatable(
+                                                        animation = tween(2000, easing = FastOutSlowInEasing),
+                                                        repeatMode = RepeatMode.Reverse
+                                                ),
+                                                label = "pulse_scale"
+                                        )
+                                        
+                                        Icon(
+                                                Icons.Default.PlayArrow,
+                                                contentDescription = "IPTV",
+                                                modifier = Modifier
+                                                        .size(64.dp)
+                                                        .scale(if (!uiState.hasTriedAutoLogin) pulseScale else 1f),
+                                                tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        
+                                        Text(
+                                                text = "IPTV Player",
+                                                style = MaterialTheme.typography.headlineMedium,
+                                                color = MaterialTheme.colorScheme.primary
+                                        )
+
+                                        Text(
+                                                text = "Xtream Codes Login",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                OutlinedTextField(
+                                        value = uiState.host,
+                                        onValueChange = viewModel::updateHost,
+                                        label = { Text("Host") },
+                                        placeholder = { Text("192.168.1.100") },
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .focusRequester(hostFocusRequester),
+                                        keyboardOptions =
+                                                KeyboardOptions(
+                                                        keyboardType = KeyboardType.Uri,
+                                                        imeAction = ImeAction.Next
+                                                ),
+                                        keyboardActions =
+                                                KeyboardActions(
+                                                        onNext = {
+                                                                portFocusRequester.requestFocus()
+                                                        }
+                                                ),
+                                        singleLine = true,
+                                        enabled = !uiState.isLoading
+                                )
+
+                                OutlinedTextField(
+                                        value = uiState.port,
+                                        onValueChange = viewModel::updatePort,
+                                        label = { Text("Port") },
+                                        placeholder = { Text("8080") },
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .focusRequester(portFocusRequester),
+                                        keyboardOptions =
+                                                KeyboardOptions(
+                                                        keyboardType = KeyboardType.Number,
+                                                        imeAction = ImeAction.Next
+                                                ),
+                                        keyboardActions =
+                                                KeyboardActions(
+                                                        onNext = {
+                                                                usernameFocusRequester
+                                                                        .requestFocus()
+                                                        }
+                                                ),
+                                        singleLine = true,
+                                        enabled = !uiState.isLoading
+                                )
+
+                                OutlinedTextField(
+                                        value = uiState.username,
+                                        onValueChange = viewModel::updateUsername,
+                                        label = { Text("Username") },
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .focusRequester(usernameFocusRequester),
+                                        keyboardOptions =
+                                                KeyboardOptions(
+                                                        keyboardType = KeyboardType.Text,
+                                                        imeAction = ImeAction.Next
+                                                ),
+                                        keyboardActions =
+                                                KeyboardActions(
+                                                        onNext = {
+                                                                passwordFocusRequester
+                                                                        .requestFocus()
+                                                        }
+                                                ),
+                                        singleLine = true,
+                                        enabled = !uiState.isLoading
+                                )
+
+                                OutlinedTextField(
+                                        value = uiState.password,
+                                        onValueChange = viewModel::updatePassword,
+                                        label = { Text("Password") },
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .focusRequester(passwordFocusRequester),
+                                        visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions =
+                                                KeyboardOptions(
+                                                        keyboardType = KeyboardType.Password,
+                                                        imeAction = ImeAction.Done
+                                                ),
+                                        keyboardActions =
+                                                KeyboardActions(
+                                                        onDone = {
+                                                                keyboardController?.hide()
+                                                                viewModel.login()
+                                                        }
+                                                ),
+                                        singleLine = true,
+                                        enabled = !uiState.isLoading
+                                )
+
+                                // Show error in alert dialog
+                                uiState.errorMessage?.let { errorMessage ->
+                                        AlertDialog(
+                                                onDismissRequest = { viewModel.clearError() },
+                                                title = { Text("Login Error") },
+                                                text = {
+                                                        LazyColumn(
+                                                                modifier =
+                                                                        Modifier.heightIn(
+                                                                                max = 300.dp
+                                                                        )
+                                                        ) {
+                                                                item {
+                                                                        Text(
+                                                                                text = errorMessage,
+                                                                                style =
+                                                                                        MaterialTheme
+                                                                                                .typography
+                                                                                                .bodySmall
+                                                                        )
+                                                                }
+                                                        }
+                                                },
+                                                confirmButton = {
+                                                        TextButton(
+                                                                onClick = { viewModel.clearError() }
+                                                        ) { Text("OK") }
+                                                },
+                                                dismissButton = {
+                                                        TextButton(
+                                                                onClick = {
+                                                                        // Copy error to clipboard
+                                                                        // (for debugging)
+                                                                        println(
+                                                                                "COPY TO CLIPBOARD: $errorMessage"
+                                                                        )
+                                                                }
+                                                        ) { Text("Copy") }
+                                                },
+                                                icon = {
+                                                        Icon(
+                                                                imageVector = Icons.Default.Warning,
+                                                                contentDescription = "Error",
+                                                                tint =
+                                                                        MaterialTheme.colorScheme
+                                                                                .error
+                                                        )
+                                                }
+                                        )
+                                }
+
+                                uiState.successMessage?.let { successMessage ->
+                                        Text(
+                                                text = successMessage,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                style = MaterialTheme.typography.bodyMedium
+                                        )
+                                }
+
+                                Button(
+                                        onClick = {
+                                                keyboardController?.hide()
+                                                viewModel.login()
+                                        },
+                                        modifier =
+                                                Modifier.fillMaxWidth()
+                                                        .height(56.dp)
+                                                        .focusRequester(loginButtonFocusRequester),
+                                        enabled = !uiState.isLoading,
+                                        colors =
+                                                ButtonDefaults.buttonColors(
+                                                        containerColor =
+                                                                MaterialTheme.colorScheme.primary
+                                                )
+                                ) {
+                                        if (uiState.isLoading) {
+                                                CircularProgressIndicator(
+                                                        modifier = Modifier.size(24.dp),
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                )
+                                        } else {
+                                                Text(
+                                                        "LOGIN",
+                                                        style = MaterialTheme.typography.titleMedium
+                                                )
+                                        }
+                                }
+                        }
+                }
+                
+                // Beautiful Loading Overlay
+                if (uiState.isLoading || (!uiState.hasTriedAutoLogin && !uiState.isAuthenticated)) {
+                        Box(
+                                modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.7f)),
+                                contentAlignment = Alignment.Center
+                        ) {
+                                Card(
+                                        modifier = Modifier.padding(32.dp),
+                                        colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surface
+                                        ),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
+                                        shape = RoundedCornerShape(20.dp)
+                                ) {
+                                        Column(
+                                                modifier = Modifier.padding(32.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(20.dp)
+                                        ) {
+                                                CircularProgressIndicator(
+                                                        modifier = Modifier.size(48.dp),
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        strokeWidth = 4.dp
+                                                )
+                                                
+                                                Text(
+                                                        text = if (!uiState.hasTriedAutoLogin) "Checking login status..." else "Logging in...",
+                                                        style = MaterialTheme.typography.titleMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                
+                                                if (uiState.isLoading) {
+                                                        Text(
+                                                                text = "Please wait...",
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }
+}
