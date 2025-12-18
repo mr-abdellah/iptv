@@ -318,6 +318,18 @@ fun MovieDetailScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+            else -> {
+                // Fallback: Show basic movie info while waiting for details
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Movie details not available")
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel.loadMovieDetail(movie.streamId) }) {
+                            Text("Load Details")
+                        }
+                    }
+                }
+            }
         }
     }
 }

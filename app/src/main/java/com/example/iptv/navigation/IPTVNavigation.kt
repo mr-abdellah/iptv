@@ -91,8 +91,9 @@ fun IPTVNavigation(navController: NavHostController = rememberNavController()) {
                                         onMovieClick = { movie ->
                                                 selectedMovie = movie
                                                 navController.navigate(
-                                                        Screen.MovieDetail.createRoute(
-                                                                movie.streamId
+                                                        Screen.VodPlayer.createRoute(
+                                                                movie.streamId.toString(),
+                                                                "movie"
                                                         )
                                                 )
                                         },
