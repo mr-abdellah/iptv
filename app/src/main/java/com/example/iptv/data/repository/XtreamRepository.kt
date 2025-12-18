@@ -1,11 +1,7 @@
 package com.example.iptv.data.repository
 
 import com.example.iptv.data.api.XtreamApi
-import com.example.iptv.data.model.AuthResponse
-import com.example.iptv.data.model.Category
-import com.example.iptv.data.model.Channel
-import com.example.iptv.data.model.EpgProgram
-import com.example.iptv.data.model.LoginCredentials
+import com.example.iptv.data.model.*
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -207,4 +203,127 @@ class XtreamRepository {
                     Result.failure(e)
                 }
             }
+
+    // VOD Movies Methods
+    suspend fun getMovieCategories(): List<Category> {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext emptyList()
+                val response = api?.getMovieCategories(creds.username, creds.password)
+
+                if (response?.isSuccessful == true) {
+                    response.body() ?: emptyList()
+                } else {
+                    emptyList()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getMovies(categoryId: String): List<Movie> {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext emptyList()
+                val response =
+                        api?.getMovies(creds.username, creds.password, categoryId = categoryId)
+
+                if (response?.isSuccessful == true) {
+                    response.body() ?: emptyList()
+                } else {
+                    emptyList()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getMovieDetail(movieId: Int): MovieDetailResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext null
+                val response = api?.getMovieDetail(creds.username, creds.password, vodId = movieId)
+
+                if (response?.isSuccessful == true) {
+                    response.body()
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    fun getMovieStreamUrl(streamId: Int, extension: String): String {
+        val creds = credentials ?: return ""
+        return "${creds.getBaseUrl()}/movie/${creds.username}/${creds.password}/$streamId.$extension"
+    }
+
+    // VOD Series Methods
+    suspend fun getSeriesCategories(): List<Category> {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext emptyList()
+                val response = api?.getSeriesCategories(creds.username, creds.password)
+
+                if (response?.isSuccessful == true) {
+                    response.body() ?: emptyList()
+                } else {
+                    emptyList()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getSeries(categoryId: String): List<Series> {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext emptyList()
+                val response =
+                        api?.getSeries(creds.username, creds.password, categoryId = categoryId)
+
+                if (response?.isSuccessful == true) {
+                    response.body() ?: emptyList()
+                } else {
+                    emptyList()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+    }
+
+    suspend fun getSeriesDetail(seriesId: Int): SeriesDetailResponse? {
+        return withContext(Dispatchers.IO) {
+            try {
+                throttleRequest()
+                val creds = credentials ?: return@withContext null
+                val response =
+                        api?.getSeriesDetail(creds.username, creds.password, seriesId = seriesId)
+
+                if (response?.isSuccessful == true) {
+                    response.body()
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    fun getEpisodeStreamUrl(seriesId: Int, episodeId: String, extension: String): String {
+        val creds = credentials ?: return ""
+        return "${creds.getBaseUrl()}/series/${creds.username}/${creds.password}/$episodeId.$extension"
+    }
 }

@@ -35,6 +35,8 @@ import com.example.iptv.ui.player.PlayerScreen
 @Composable
 fun MainScreen(
         repository: XtreamRepository,
+        onNavigateToMovies: () -> Unit = {},
+        onNavigateToSeries: () -> Unit = {},
         categoriesViewModel: CategoriesViewModel = viewModel { CategoriesViewModel(repository) },
         channelsViewModel: ChannelsViewModel = viewModel { ChannelsViewModel(repository) }
 ) {
@@ -56,7 +58,11 @@ fun MainScreen(
     val favoritesCategory =
             Category(categoryId = "-1", categoryName = "⭐ Favorites", parentId = null)
     val searchCategory = Category(categoryId = "-2", categoryName = "🔍 Search", parentId = null)
-    val allCategories = listOf(favoritesCategory, searchCategory) + categoriesUiState.categories
+    val moviesCategory = Category(categoryId = "-3", categoryName = "🎬 Movies", parentId = null)
+    val seriesCategory = Category(categoryId = "-4", categoryName = "📺 TV Series", parentId = null)
+    val allCategories =
+            listOf(favoritesCategory, searchCategory, moviesCategory, seriesCategory) +
+                    categoriesUiState.categories
 
     // Auto-select first regular category only on initial load
     var hasInitialized by remember { mutableStateOf(false) }
@@ -134,6 +140,14 @@ fun MainScreen(
                             "-2" -> {
                                 // Show search
                                 showSearch = true
+                            }
+                            "-3" -> {
+                                // Navigate to Movies
+                                onNavigateToMovies()
+                            }
+                            "-4" -> {
+                                // Navigate to TV Series
+                                onNavigateToSeries()
                             }
                             else -> {
                                 channelsViewModel.loadChannels(
