@@ -1,8 +1,11 @@
 package com.example.iptv.ui.player
 
 import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,7 +20,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,11 +48,14 @@ fun PlayerScreen(
         val favorites by favoritesRepository.favorites.collectAsState()
         val isFavorite = favorites.contains(currentChannel.streamId)
 
-        // Initialize player only once to prevent crashes
-        var initialized by remember { mutableStateOf(false) }
-
         // Controls visibility
         var showControls by remember { mutableStateOf(true) }
+
+        // Focus requester for TV remote support
+        val screenFocusRequester = remember { FocusRequester() }
+
+        // Interaction source for transparent click layer
+        val interactionSource = remember { MutableInteractionSource() }
 
         // Auto-hide controls after 5 seconds
         LaunchedEffect(showControls) {
@@ -56,14 +65,61 @@ fun PlayerScreen(
                 }
         }
 
-        if (!initialized) {
-                viewModel.initializePlayer(context, streamUrl, channelName)
-                initialized = true
+        // Request focus when controls are hidden (for remote control)
+        LaunchedEffect(showControls) {
+                if (!showControls) {
+                        screenFocusRequester.requestFocus()
+                }
         }
+
+        // Reinitialize player when stream URL changes (channel changes)
+        LaunchedEffect(streamUrl) { viewModel.initializePlayer(context, streamUrl, channelName) }
 
         DisposableEffect(Unit) { onDispose { viewModel.releasePlayer() } }
 
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        // Handle Back Button
+        BackHandler { onBack() }
+
+        // Channel navigation functions
+        val onPreviousChannel = {
+                if (currentChannelIndex > 0) {
+                        onChannelChange(channelList[currentChannelIndex - 1])
+                }
+        }
+
+        val onNextChannel = {
+                if (currentChannelIndex < channelList.size - 1) {
+                        onChannelChange(channelList[currentChannelIndex + 1])
+                }
+        }
+
+        Box(
+                modifier =
+                        Modifier.fillMaxSize()
+                                .background(Color.Black)
+                                // TV Remote key handling
+                                .focusRequester(screenFocusRequester)
+                                .focusable()
+                                .onKeyEvent { keyEvent ->
+                                        if (keyEvent.type == KeyEventType.KeyDown) {
+                                                when (keyEvent.key) {
+                                                        Key.DirectionUp -> {
+                                                                onNextChannel()
+                                                                true
+                                                        }
+                                                        Key.DirectionDown -> {
+                                                                onPreviousChannel()
+                                                                true
+                                                        }
+                                                        Key.Enter, Key.DirectionCenter -> {
+                                                                showControls = !showControls
+                                                                true
+                                                        }
+                                                        else -> false
+                                                }
+                                        } else false
+                                }
+        ) {
                 uiState.errorMessage?.let { errorMessage ->
                         // Error state
                         Card(modifier = Modifier.align(Alignment.Center).padding(32.dp)) {
@@ -99,7 +155,7 @@ fun PlayerScreen(
                         }
                 }
                         ?: run {
-                                // Video player using TextureView to prevent crashes
+                                // Video player using TextureView
                                 AndroidView(
                                         factory = { ctx ->
                                                 android.view.TextureView(ctx).apply {
@@ -130,6 +186,16 @@ fun PlayerScreen(
                                         }
                                 )
 
+                                // Transparent click layer - toggles controls on tap
+                                Box(
+                                        modifier =
+                                                Modifier.fillMaxSize().clickable(
+                                                                interactionSource =
+                                                                        interactionSource,
+                                                                indication = null
+                                                        ) { showControls = !showControls }
+                                )
+
                                 // Video Player Controls Overlay
                                 if (showControls) {
                                         VideoPlayerControls(
@@ -142,28 +208,9 @@ fun PlayerScreen(
                                                                 currentChannel.streamId
                                                         )
                                                 },
-                                                onPreviousChannel = {
-                                                        if (currentChannelIndex > 0) {
-                                                                val previousChannel =
-                                                                        channelList[
-                                                                                currentChannelIndex -
-                                                                                        1]
-                                                                onChannelChange(previousChannel)
-                                                        }
-                                                },
-                                                onNextChannel = {
-                                                        if (currentChannelIndex <
-                                                                        channelList.size - 1
-                                                        ) {
-                                                                val nextChannel =
-                                                                        channelList[
-                                                                                currentChannelIndex +
-                                                                                        1]
-                                                                onChannelChange(nextChannel)
-                                                        }
-                                                },
-                                                onBack = onBack,
-                                                onToggleControls = { showControls = !showControls }
+                                                onPreviousChannel = onPreviousChannel,
+                                                onNextChannel = onNextChannel,
+                                                onBack = onBack
                                         )
                                 }
                         }
@@ -180,8 +227,7 @@ fun VideoPlayerControls(
         onFavoriteClick: () -> Unit,
         onPreviousChannel: () -> Unit,
         onNextChannel: () -> Unit,
-        onBack: () -> Unit,
-        onToggleControls: () -> Unit
+        onBack: () -> Unit
 ) {
         Box(modifier = Modifier.fillMaxSize()) {
                 // Top Controls Bar
@@ -333,12 +379,6 @@ fun VideoPlayerControls(
                                         )
                                 }
                         }
-                }
-
-                // Hide controls on tap (center area)
-                Box(modifier = Modifier.fillMaxSize().padding(top = 100.dp, bottom = 100.dp)) {
-                        // Invisible clickable area to hide controls
-                        Spacer(modifier = Modifier.fillMaxSize().clickable { onToggleControls() })
                 }
         }
 }
