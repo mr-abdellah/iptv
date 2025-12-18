@@ -48,6 +48,9 @@ fun PlayerScreen(
         val favorites by favoritesRepository.favorites.collectAsState()
         val isFavorite = favorites.contains(currentChannel.streamId)
 
+        // Initialize player only once to prevent crashes
+        var initialized by remember { mutableStateOf(false) }
+
         // Controls visibility
         var showControls by remember { mutableStateOf(true) }
 
@@ -72,8 +75,10 @@ fun PlayerScreen(
                 }
         }
 
-        // Reinitialize player when stream URL changes (channel changes)
-        LaunchedEffect(streamUrl) { viewModel.initializePlayer(context, streamUrl, channelName) }
+        if (!initialized) {
+                viewModel.initializePlayer(context, streamUrl, channelName)
+                initialized = true
+        }
 
         DisposableEffect(Unit) { onDispose { viewModel.releasePlayer() } }
 
