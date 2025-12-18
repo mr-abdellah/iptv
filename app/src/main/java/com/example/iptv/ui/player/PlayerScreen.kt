@@ -41,7 +41,7 @@ fun PlayerScreen(
         favoritesRepository: com.example.iptv.data.repository.FavoritesRepository,
         onChannelChange: (com.example.iptv.data.model.Channel) -> Unit,
         onBack: () -> Unit,
-        viewModel: PlayerViewModel = viewModel()
+        viewModel: PlayerViewModel = viewModel(key = currentChannel.streamId.toString())
 ) {
         val context = LocalContext.current
         val uiState by viewModel.uiState.collectAsState()
@@ -75,6 +75,7 @@ fun PlayerScreen(
                 }
         }
 
+        // Initialize player
         if (!initialized) {
                 viewModel.initializePlayer(context, streamUrl, channelName)
                 initialized = true

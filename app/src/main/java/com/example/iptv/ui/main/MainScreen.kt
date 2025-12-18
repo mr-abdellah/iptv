@@ -94,21 +94,26 @@ fun MainScreen(
     }
 
     if (showPlayer && selectedChannel != null) {
+        // IMPORTANT: Recalculate streamUrl every time selectedChannel changes
         val streamUrl = repository.getStreamUrl(selectedChannel!!.streamId)
         val currentChannelIndex =
                 channelsUiState.channels.indexOfFirst { it.streamId == selectedChannel!!.streamId }
+
         if (streamUrl != null) {
-            PlayerScreen(
-                    streamUrl = streamUrl,
-                    channelName = selectedChannel!!.name,
-                    currentChannel = selectedChannel!!,
-                    channelList = channelsUiState.channels,
-                    currentChannelIndex = currentChannelIndex,
-                    repository = repository,
-                    favoritesRepository = favoritesRepository,
-                    onChannelChange = { newChannel -> selectedChannel = newChannel },
-                    onBack = { showPlayer = false }
-            )
+            // Use key() to force PlayerScreen to recompose when channel changes
+            key(selectedChannel!!.streamId) {
+                PlayerScreen(
+                        streamUrl = streamUrl,
+                        channelName = selectedChannel!!.name,
+                        currentChannel = selectedChannel!!,
+                        channelList = channelsUiState.channels,
+                        currentChannelIndex = currentChannelIndex,
+                        repository = repository,
+                        favoritesRepository = favoritesRepository,
+                        onChannelChange = { newChannel -> selectedChannel = newChannel },
+                        onBack = { showPlayer = false }
+                )
+            }
         }
     } else {
         Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

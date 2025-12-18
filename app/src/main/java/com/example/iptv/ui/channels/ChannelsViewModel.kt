@@ -34,8 +34,12 @@ class ChannelsViewModel(private val repository: XtreamRepository) : ViewModel() 
 
         private var channelsJob: kotlinx.coroutines.Job? = null
         private val categoryCache = mutableMapOf<String, List<Channel>>()
+
+        // NEW: Cache to map streamId to Channel for instant favorites lookup
+        private val channelByIdCache = mutableMapOf<Int, Channel>()
+
         private var lastChannelLoadTime = 0L
-        private val minChannelLoadInterval = 5000L // 5 seconds between same category loads
+        private val minChannelLoadInterval = 5000L
 
         fun loadChannels(categoryId: String, categoryName: String) {
                 // Check cache first for instant loading
@@ -86,18 +90,12 @@ class ChannelsViewModel(private val repository: XtreamRepository) : ViewModel() 
                                                         // Cache the results
                                                         categoryCache[categoryId] = channels
 
-                                                        // Update cache with these channels for
-                                                        // faster favorites
-                                                        allChannelsCache.addAll(
-                                                                channels.filter { newChannel ->
-                                                                        !allChannelsCache.any {
-                                                                                existing ->
-                                                                                existing.streamId ==
-                                                                                        newChannel
-                                                                                                .streamId
-                                                                        }
-                                                                }
-                                                        )
+                                                        // NEW: Update channel by ID cache for fast
+                                                        // favorites
+                                                        channels.forEach { channel ->
+                                                                channelByIdCache[channel.streamId] =
+                                                                        channel
+                                                        }
 
                                                         _uiState.value =
                                                                 _uiState.value.copy(
@@ -124,24 +122,6 @@ class ChannelsViewModel(private val repository: XtreamRepository) : ViewModel() 
                 return repository.getStreamUrl(streamId)
         }
 
-        // Cache to store all channels from all categories for quick favorites lookup
-        private var allChannelsCache = mutableListOf<Channel>()
-        private var cacheLoaded = false
-
-        private suspend fun ensureCacheLoaded() {
-                if (!cacheLoaded) {
-                        repository.getCategories().onSuccess { categories ->
-                                categories.forEach { category ->
-                                        repository.getChannels(category.categoryId).onSuccess {
-                                                channels ->
-                                                allChannelsCache.addAll(channels)
-                                        }
-                                }
-                        }
-                        cacheLoaded = true
-                }
-        }
-
         fun loadFavoriteChannels() {
                 _uiState.value =
                         _uiState.value.copy(
@@ -165,21 +145,58 @@ class ChannelsViewModel(private val repository: XtreamRepository) : ViewModel() 
                                         return@launch
                                 }
 
-                                // Ensure cache is loaded first time only
-                                ensureCacheLoaded()
-
-                                // Filter favorites from cache - instant!
+                                // NEW: Instantly get favorites from cache (no API calls!)
                                 val favoriteChannels =
-                                        allChannelsCache.filter { channel ->
-                                                favoriteIds.contains(channel.streamId)
+                                        favoriteIds.mapNotNull { id -> channelByIdCache[id] }
+
+                                // If we have all favorites in cache, show them instantly
+                                if (favoriteChannels.size == favoriteIds.size) {
+                                        _uiState.value =
+                                                _uiState.value.copy(
+                                                        channels = favoriteChannels,
+                                                        isLoading = false,
+                                                        errorMessage = null
+                                                )
+                                } else {
+                                        // Some favorites not in cache - need to load them
+                                        // Only load categories we haven't loaded yet
+                                        val missingIds =
+                                                favoriteIds.filter { id ->
+                                                        !channelByIdCache.containsKey(id)
+                                                }
+
+                                        // Load channels from API to find missing favorites
+                                        repository.getCategories().onSuccess { categories ->
+                                                // Load channels from each category until we find
+                                                // all favorites
+                                                for (category in categories) {
+                                                        if (missingIds.isEmpty()) break
+
+                                                        repository.getChannels(category.categoryId)
+                                                                .onSuccess { channels ->
+                                                                        channels.forEach { channel
+                                                                                ->
+                                                                                channelByIdCache[
+                                                                                        channel.streamId] =
+                                                                                        channel
+                                                                        }
+                                                                }
+                                                }
                                         }
 
-                                _uiState.value =
-                                        _uiState.value.copy(
-                                                channels = favoriteChannels,
-                                                isLoading = false,
-                                                errorMessage = null
-                                        )
+                                        // Now get all favorites from updated cache
+                                        val allFavorites =
+                                                favoriteIds.mapNotNull { id ->
+                                                        channelByIdCache[id]
+                                                }
+
+                                        _uiState.value =
+                                                _uiState.value.copy(
+                                                        channels = allFavorites,
+                                                        isLoading = false,
+                                                        errorMessage = null
+                                                )
+                                }
                         } catch (error: Exception) {
                                 _uiState.value =
                                         _uiState.value.copy(
@@ -210,45 +227,67 @@ class ChannelsViewModel(private val repository: XtreamRepository) : ViewModel() 
                                         // Add delay to prevent rapid API calls (throttling)
                                         kotlinx.coroutines.delay(500)
 
-                                        // Limit search to prevent server overload
-                                        // In production, implement server-side search
-                                        val searchResults = mutableListOf<Channel>()
-
-                                        // For now, search only in first category to prevent loops
-                                        repository.getCategories().onSuccess { categories ->
-                                                if (categories.isNotEmpty()) {
-                                                        val firstCategory = categories.first()
-                                                        repository.getChannels(
-                                                                        firstCategory.categoryId
+                                        // Search in cache first (instant!)
+                                        val cachedResults =
+                                                channelByIdCache
+                                                        .values
+                                                        .filter { channel ->
+                                                                channel.name.contains(
+                                                                        query,
+                                                                        ignoreCase = true
                                                                 )
-                                                                .onSuccess { channels ->
-                                                                        searchResults.addAll(
-                                                                                channels
-                                                                                        .filter {
-                                                                                                channel
-                                                                                                ->
-                                                                                                channel.name
-                                                                                                        .contains(
-                                                                                                                query,
-                                                                                                                ignoreCase =
-                                                                                                                        true
-                                                                                                        )
-                                                                                        }
-                                                                                        .take(
-                                                                                                20
-                                                                                        ) // Limit
-                                                                                // results
-                                                                                )
-                                                                }
-                                                }
-                                        }
+                                                        }
+                                                        .take(20)
 
-                                        _uiState.value =
-                                                _uiState.value.copy(
-                                                        channels = searchResults,
-                                                        isLoading = false,
-                                                        errorMessage = null
-                                                )
+                                        if (cachedResults.isNotEmpty()) {
+                                                // Show cached results immediately
+                                                _uiState.value =
+                                                        _uiState.value.copy(
+                                                                channels = cachedResults,
+                                                                isLoading = false,
+                                                                errorMessage = null
+                                                        )
+                                        } else {
+                                                // No cached results, search in first category
+                                                val searchResults = mutableListOf<Channel>()
+
+                                                repository.getCategories().onSuccess { categories ->
+                                                        if (categories.isNotEmpty()) {
+                                                                val firstCategory =
+                                                                        categories.first()
+                                                                repository.getChannels(
+                                                                                firstCategory
+                                                                                        .categoryId
+                                                                        )
+                                                                        .onSuccess { channels ->
+                                                                                searchResults
+                                                                                        .addAll(
+                                                                                                channels
+                                                                                                        .filter {
+                                                                                                                channel
+                                                                                                                ->
+                                                                                                                channel.name
+                                                                                                                        .contains(
+                                                                                                                                query,
+                                                                                                                                ignoreCase =
+                                                                                                                                        true
+                                                                                                                        )
+                                                                                                        }
+                                                                                                        .take(
+                                                                                                                20
+                                                                                                        )
+                                                                                        )
+                                                                        }
+                                                        }
+                                                }
+
+                                                _uiState.value =
+                                                        _uiState.value.copy(
+                                                                channels = searchResults,
+                                                                isLoading = false,
+                                                                errorMessage = null
+                                                        )
+                                        }
                                 } catch (error: Exception) {
                                         if (error !is CancellationException) {
                                                 _uiState.value =
